@@ -1,0 +1,24 @@
+[Unit]
+Description=Client Health Monitor Service
+After=network.target
+
+[Service]
+Type=notify
+# Use the user who owns the files (usually the user who deployed)
+# Change this to your actual username if needed
+User=%i
+Group=%i
+WorkingDirectory=/opt/client-monitor
+Environment="PATH=/opt/client-monitor/venv/bin"
+EnvironmentFile=/opt/client-monitor/.env
+ExecStart=/opt/client-monitor/venv/bin/gunicorn -c gunicorn_config.py wsgi:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+

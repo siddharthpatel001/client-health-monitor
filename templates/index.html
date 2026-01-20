@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Client HealthMon</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        /* Smooth fade for rows */
+        .table-row-enter { animation: fadeIn 0.5s; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+    </style>
+</head>
+<body class="bg-light">
+
+<div class="container mt-5">
+    <h2 class="text-center mb-4">Clients Health Monitoring Portal</h2>
+
+    <!-- Flash Messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            <div id="flash-messages">
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ 'danger' if category == 'error' else ('warning' if category == 'warning' else 'success') }} alert-dismissible fade show" role="alert">
+                        <strong>{% if category == 'error' %}Error!{% elif category == 'warning' %}Warning!{% else %}Success!{% endif %}</strong> {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    </div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm p-4 mb-5">
+        <h5>Add New Client</h5>
+        <form action="/add_client" method="POST" class="row g-3">
+            <div class="col-md-5">
+                <input type="text" name="ip_address" class="form-control" placeholder="IP Address (e.g. 192.168.1.10)" required>
+            </div>
+            <div class="col-md-5">
+                <input type="email" name="alert_email" class="form-control" placeholder="Alert Email" required>
+            </div>
+            <div class="col-md-2">
+                <button type="submit" class="btn btn-primary w-100">Add</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card shadow-sm">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Live Status</h5>
+            <div>
+                <span class="badge bg-success">Online</span>
+                <span class="badge bg-danger">Offline</span>
+            </div>
+        </div>
+        <div class="card-body">
+            <table class="table table-hover align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>IP Address</th>
+                        <th>Ping</th>
+                        <th>SSH</th>
+                        <th>WifiAgent</th>
+                        <th>Alert Status</th>
+                        <th>Last Check</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="client-table-body">
+                    </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    function updateTable() {
+        fetch('/api/clients')
+            .then(response => response.json())
+            .then(data => {
+                const tableBody = document.getElementById('client-table-body');
+                // Note: Clearing HTML completely causes a visual "blink". 
+                // For a simple app this is fine, but in production React/Vue is preferred.
+                tableBody.innerHTML = ''; 
+
+                if (data.length === 0) {
+                    tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No clients added yet.</td></tr>';
+                    return;
+                }
+
+                data.forEach(client => {
+                    const getClass = (status) => {
+                        if (status === 'Online') return 'text-success fw-bold';
+                        if (status === 'Offline') return 'text-danger fw-bold';
+                        return 'text-warning fw-bold';
+                    };
+
+                    // Bell Logic
+                    let alertHtml = `<span class="text-muted small">${client.email}</span>`;
+                    if (client.alert_active) {
+                        alertHtml += `
+                            <div class="text-danger mt-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-bell-fill" viewBox="0 0 16 16">
+                                  <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 1 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
+                                </svg>
+                                <span class="small fw-bold">Email Sent</span>
+                            </div>
+                        `;
+                    }
+
+                    const row = `
+                        <tr class="table-row-enter">
+                            <td class="fw-bold text-secondary">${client.ip}</td>
+                            <td class="${getClass(client.ping)}">${client.ping}</td>
+                            <td class="${getClass(client.ssh)}">${client.ssh}</td>
+                            <td class="${getClass(client.wifi)}">${client.wifi}</td>
+                            <td>${alertHtml}</td>
+                            <td>${client.last_updated}</td>
+                            <td>
+                                <form action="/delete_client/${client.id}" method="POST" onsubmit="return confirmDelete('${client.ip}')">
+                                    <button class="btn btn-sm btn-outline-danger">Remove</button>
+                                </form>
+                            </td>
+                        </tr>
+                    `;
+                    tableBody.innerHTML += row;
+                });
+            })
+            .catch(error => console.error('Error fetching data:', error));
+    }
+
+    updateTable();
+    // Auto-refresh every 30 seconds (matches backend status check interval)
+    setInterval(updateTable, 30000);
+
+    // Confirmation dialog before deleting a client
+    function confirmDelete(ipAddress) {
+        return confirm(`Are you sure you want to remove client ${ipAddress}?\n\nThis action cannot be undone.`);
+    }
+
+    // Auto-dismiss flash messages after 5 seconds
+    setTimeout(function() {
+        const flashMessages = document.getElementById('flash-messages');
+        if (flashMessages) {
+            const alerts = flashMessages.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                const bsAlert = new bootstrap.Alert(alert);
+                bsAlert.close();
+            });
+        }
+    }, 5000);
+</script>
+</body>
+</html>
