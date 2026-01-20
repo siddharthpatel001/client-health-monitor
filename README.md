@@ -119,6 +119,10 @@ A Flask-based web application for monitoring network client health status in rea
    sudo systemctl start client-monitor
    sudo systemctl enable client-monitor
    ```
+6. **Logs:**
+```bash
+sudo journalctl -u client-monitor -f
+```
 
 ### Manual Deployment
 
