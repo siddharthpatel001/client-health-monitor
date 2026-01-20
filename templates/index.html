@@ -9,9 +9,84 @@
         /* Smooth fade for rows */
         .table-row-enter { animation: fadeIn 0.5s; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Dark mode styles */
+        body.dark-mode {
+            background-color: #1a1a1a !important;
+            color: #e0e0e0 !important;
+        }
+
+        body.dark-mode .card {
+            background-color: #2d2d2d !important;
+            color: #e0e0e0 !important;
+            border-color: #444 !important;
+        }
+
+        body.dark-mode .table {
+            color: #e0e0e0 !important;
+        }
+
+        body.dark-mode .table-dark {
+            background-color: #1a1a1a !important;
+            color: #e0e0e0 !important;
+        }
+
+        body.dark-mode .form-control {
+            background-color: #3d3d3d !important;
+            color: #e0e0e0 !important;
+            border-color: #555 !important;
+        }
+
+        body.dark-mode .form-control::placeholder {
+            color: #999 !important;
+        }
+
+        body.dark-mode .text-muted {
+            color: #999 !important;
+        }
+
+        body.dark-mode .text-secondary {
+            color: #aaa !important;
+        }
+
+        /* Stat cards */
+        .stat-card {
+            transition: transform 0.2s;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+
+        /* Loading spinner */
+        .spinner-border {
+            width: 3rem;
+            height: 3rem;
+        }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1000;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
     </style>
 </head>
 <body class="bg-light">
+
+<!-- Theme Toggle Button -->
+<button class="btn btn-outline-secondary theme-toggle" onclick="toggleDarkMode()" title="Toggle Dark/Light Mode">
+    <span id="theme-icon">🌙</span>
+</button>
 
 <div class="container mt-5">
     <h2 class="text-center mb-4">Clients Health Monitoring Portal</h2>
@@ -29,6 +104,42 @@
             </div>
         {% endif %}
     {% endwith %}
+
+    <!-- Statistics Dashboard -->
+    <div class="row mb-4">
+        <div class="col-md-3">
+            <div class="card text-center bg-success text-white stat-card">
+                <div class="card-body">
+                    <h3 id="stat-online" class="mb-0">0</h3>
+                    <p class="mb-0 small">✅ All Online</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-danger text-white stat-card">
+                <div class="card-body">
+                    <h3 id="stat-offline" class="mb-0">0</h3>
+                    <p class="mb-0 small">❌ All Offline</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-warning text-white stat-card">
+                <div class="card-body">
+                    <h3 id="stat-partial" class="mb-0">0</h3>
+                    <p class="mb-0 small">⚠️ Partial Outage</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card text-center bg-info text-white stat-card">
+                <div class="card-body">
+                    <h3 id="stat-total" class="mb-0">0</h3>
+                    <p class="mb-0 small">📊 Total Clients</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <div class="card shadow-sm p-4 mb-5">
         <h5>Add New Client</h5>
@@ -49,11 +160,26 @@
         <div class="card-header d-flex justify-content-between align-items-center">
             <h5 class="mb-0">Live Status</h5>
             <div>
+                <small class="text-muted me-3">Last updated: <span id="last-update">--</span></small>
                 <span class="badge bg-success">Online</span>
                 <span class="badge bg-danger">Offline</span>
             </div>
         </div>
         <div class="card-body">
+            <!-- Search Box -->
+            <div class="mb-3">
+                <input type="text" id="searchBox" class="form-control"
+                       placeholder="🔍 Search by IP address..."
+                       onkeyup="filterTable()">
+            </div>
+
+            <!-- Loading Spinner -->
+            <div id="loading-spinner" class="text-center my-4" style="display: none;">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Loading client data...</p>
+            </div>
             <table class="table table-hover align-middle">
                 <thead class="table-dark">
                     <tr>
@@ -76,18 +202,33 @@
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
     function updateTable() {
+        // Show loading spinner
+        document.getElementById('loading-spinner').style.display = 'block';
+
         fetch('/api/clients')
             .then(response => response.json())
             .then(data => {
+                // Hide loading spinner
+                document.getElementById('loading-spinner').style.display = 'none';
+
                 const tableBody = document.getElementById('client-table-body');
-                // Note: Clearing HTML completely causes a visual "blink". 
+                // Note: Clearing HTML completely causes a visual "blink".
                 // For a simple app this is fine, but in production React/Vue is preferred.
-                tableBody.innerHTML = ''; 
+                tableBody.innerHTML = '';
 
                 if (data.length === 0) {
                     tableBody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">No clients added yet.</td></tr>';
+                    updateStats([]); // Update stats with empty data
                     return;
                 }
+
+                // Update statistics
+                updateStats(data);
+
+                // Update last updated timestamp
+                const now = new Date();
+                document.getElementById('last-update').textContent =
+                    now.toLocaleTimeString('en-US', { hour12: false });
 
                 data.forEach(client => {
                     const getClass = (status) => {
@@ -126,8 +267,68 @@
                     `;
                     tableBody.innerHTML += row;
                 });
+
+                // Apply search filter if search box has value
+                filterTable();
             })
-            .catch(error => console.error('Error fetching data:', error));
+            .catch(error => {
+                // Hide loading spinner on error
+                document.getElementById('loading-spinner').style.display = 'none';
+                console.error('Error fetching data:', error);
+            });
+    }
+
+    // Update statistics dashboard
+    function updateStats(data) {
+        let allOnline = 0, allOffline = 0, partial = 0;
+
+        data.forEach(client => {
+            if (client.ping === 'Online' && client.ssh === 'Online' && client.wifi === 'Online') {
+                allOnline++;
+            } else if (client.ping === 'Offline' && client.ssh === 'Offline' && client.wifi === 'Offline') {
+                allOffline++;
+            } else {
+                partial++;
+            }
+        });
+
+        document.getElementById('stat-online').textContent = allOnline;
+        document.getElementById('stat-offline').textContent = allOffline;
+        document.getElementById('stat-partial').textContent = partial;
+        document.getElementById('stat-total').textContent = data.length;
+    }
+
+    // Filter table by IP address
+    function filterTable() {
+        const searchValue = document.getElementById('searchBox').value.toLowerCase();
+        const rows = document.querySelectorAll('#client-table-body tr');
+
+        rows.forEach(row => {
+            const ip = row.cells[0]?.textContent.toLowerCase() || '';
+            if (ip.includes(searchValue) || searchValue === '') {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    }
+
+    // Toggle dark mode
+    function toggleDarkMode() {
+        document.body.classList.toggle('dark-mode');
+        const isDark = document.body.classList.contains('dark-mode');
+
+        // Update icon
+        document.getElementById('theme-icon').textContent = isDark ? '☀️' : '🌙';
+
+        // Save preference
+        localStorage.setItem('darkMode', isDark);
+    }
+
+    // Load dark mode preference on page load
+    if (localStorage.getItem('darkMode') === 'true') {
+        document.body.classList.add('dark-mode');
+        document.getElementById('theme-icon').textContent = '☀️';
     }
 
     updateTable();
